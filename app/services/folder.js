@@ -58,77 +58,38 @@ module.exports = (Model, App) => {
     });
   }
 
-  const Delete = (user, folderId) => {
-    console.info('User %s requested to delete folder %s', user.email, folderId)
-    return new Promise((resolve, reject) => {
+  const Delete = async (user, folderId) => {
+    console.info('User %s requested to delete folder %s', user.email, folderId);
 
-      async.waterfall([
-        next => {
-          // Mnemonic is needed to use the CLI
-          if (user.mnemonic === 'null') { next(new Error('Your mnemonic is invalid')) } else { next() }
-        },
-        next => {
-          // Check if user is the owner if the folder
-          Model.folder.findOne({ where: { id: { [Op.eq]: folderId }, userId: { [Op.eq]: user.id } } }).then(result => next(null, result)).catch(() => next('Folder does not exists'))
-        },
-        (folder, next) => {
-          // Check if folder is the root folder
-          console.log(folder.id)
-          if (folder.id === user.root_folder_id) {
-            next(new Error('Cannot delete root folder'))
-          } else {
-            next(null, folder)
-          }
-        },
-        (folder, next) => {
-          // If folder has bucket id, is a legacy folder. Just delete that bucket.
-          if (folder.bucket) {
-            App.services.Storj.DeleteBucket(user, folder.bucket).then(() => next(null, folder)).catch(err => reject(err))
-          }
-          else {
-            next(null, folder)
-          }
-        },
-        (folder, next) => {
-          // Delete all the files in the folder
-          Model.file.findAll({ where: { folder_id: folder.id } }).then(files => {
-            async.eachSeries(files, (file, nextFile) => {
-              FileService.Delete(user, file.bucket, file.fileId).then(() => {
-                console.log('Deleted file %s', file.fileId)
-                nextFile()
-              }).catch(err => {
-                console.log('Error deleting file %s', err)
-                nextFile(err)
-              })
-            }, (err) => next(err, folder))            
-          }).catch(next)
-        },
-        (folder, next) => {
-          // Find all subfolders and repeat
-          Model.folder.findAll({ where: { parentId: folder.id } }).then(subFolders => {
-            async.eachSeries(subFolders, (subFolder, nextSubFolder) => {
-              console.log(subFolder.id)
-              Delete(user, subFolder.id).then(() => {
-                console.log('Deleted folder %s', subFolder.id)
-                nextSubFolder()
-              }).catch(nextSubFolder)
-            }, (err) => {
-              next(err, folder)
-            })
-          }).catch(next)
-        },
-        (folder, next) => {
-          // Delete folder itself
-          folder.destroy().then(() => next()).catch(err => next(err))
-        }
-      ], (err) => {
-        if (err) {
-          reject(new Error(err))
-        } else {
-          resolve()
-        }
-      })
-    });
+    if (user.mnemonic === 'null') { 
+      return new Error('Your mnemonic is invalid');
+    }
+
+    const folder = await Model.folder.findOne({ where: { id: { [Op.eq]: folderId }, userId: { [Op.eq]: user.id } } });
+    if (!folder) {
+      return new Error('Folder does not exists');
+    }
+    
+    console.log(folder.id);
+    if (folder.id === user.root_folder_id) {
+      return new Error('Cannot delete root folder');
+    }
+
+    if (folder.bucket) {
+      await App.services.Storj.DeleteBucket(user, folder.bucket);
+    }
+
+    // Delete all the files in the folder
+    // Find all subfolders and repeat
+    const folderFiles = await Model.file.findAll({ where: { folder_id: folder.id } });
+    const folderFolders = await Model.folder.findAll({ where: { parentId: folder.id } });
+    await Promise.all(
+      folderFiles.map(file => FileService.Delete(user, file.bucket, file.fileId))
+        .concat(folderFolders.map(subFolder => Delete(user, subFolder.id)))
+    );
+
+    // Destroy folder
+    await folder.destroy();
   }
 
   const CreateZip = (zipFileName, pathNames = []) => {
@@ -388,18 +349,313 @@ module.exports = (Model, App) => {
     })
   }
 
-  const MoveFolder = (user, folderId, destination, replace = false) => {
+  const CombineFolder = async (
+    user,
+    folderData,
+    destFolderTree,
+    destinationPath,
+    mainFolder,
+    replaceAll = false,
+    combineAll = false,
+    resultAcum = { success: 0, overwrites: 0, combines: 0, errors: 0, removedFolders: [], results: [] }
+  ) => {
+    function getMoveErrs(moveOps) {
+      return moveOps.filter(moveOp => moveOp && moveOp.error);
+    }
+
+    function getFileOverwriteErrs(moveOps) {
+      return moveOps.filter(moveOp => moveOp.error && moveOp.error.message && moveOp.error.message.includes('same name'));
+    }
+
+    function getFolderCombineErrs(moveCombinesOps) {
+      let moveOps = moveCombinesOps.reduce((allResults, childResult) => allResults.concat(childResult.error.map(error => { return { error: error.error, item: error.item, destination: error.destination }})), []);
+      return moveOps.filter(moveOp => moveOp.error && moveOp.error.message && moveOp.error.message.includes('same name') && !moveOp.item.fileId);
+    }
+
+    function getFolderOverwriteErrs(moveCombinesOps) {
+      let moveOps = moveCombinesOps.reduce((allResults, childResult) => allResults.concat(childResult.error.map(error => { return { error: error.error, item: error.item, destination: error.destination }})), []);
+      return moveOps.filter(moveOp => moveOp.error && moveOp.error.message && moveOp.error.message.includes('same name') && !!moveOp.item.fileId);
+    }
+
+    function getRemovedFolders(moveOps) {
+      return moveOps.reduce((removedFolders, childResult) => removedFolders.concat(childResult.removedFolders), []);
+    }
+
+    function getFileNotOverwriteErrs(moveOps) {
+      return moveOps.filter(moveOp => moveOp.error && moveOp.error.message && !moveOp.error.message.includes('same name'));
+    }
+
+    function getSuccessMoveOps(moveOps) {
+      return moveOps.filter(moveOp => !moveOp.error);
+    }
+
+    function getFolderNotOverwriteErrs(moveOps) {
+      if (!moveOps.length) {
+        return [];
+      }
+
+      let errors = moveOps.reduce((allResults, childResult) => allResults.concat(childResult.error), []);
+      return errors.filter(moveOp => moveOp.error && moveOp.error.message && !moveOp.error.message.includes('same name'));
+    }
+
+    function setResultAccumEnd(removedFolders) {
+      removedFolders = removedFolders.concat(folderData.folder.id);
+      resultAcum.success += 1;
+      resultAcum.results.push({
+        item: folderData.folder,
+        destination: { id: destFolderTree.id, destinationPath },
+        overwrites: [],
+        combines: [],
+        removedFolders,
+        errors: [],
+        success: 1
+      });
+      resultAcum.removedFolders = resultAcum.removedFolders.concat(removedFolders);
+    }
+
+    function setResultAccum(result) {
+      resultAcum.overwrites += result.overwrites.length;
+      resultAcum.combines += result.combines.length;
+      resultAcum.removedFolders = resultAcum.removedFolders.concat(result.removedFolders || []),
+      resultAcum.errors += result.errors.length;
+      resultAcum.success += result.success;
+      resultAcum.results.push(result);
+    }
+
+    function setResultAccumFromCombines(combinesResult) {
+      combinesResult.forEach(combineResult => {
+        resultAcum.overwrites += combineResult.overwrites;
+        resultAcum.combines += combineResult.combines;
+        resultAcum.errors += combineResult.errors;
+        resultAcum.success += combineResult.success;
+        resultAcum.results = resultAcum.results.concat(combineResult.results);
+      });
+    }
+
+    function getResult(destination, overwrites, combines, removedFolders, success, errors) {
+      return {
+        destination,
+        overwrites,
+        combines,
+        removedFolders,
+        success,
+        errors
+      };
+    }
+
+    function isSuccessfulResult(result) {
+      if (!result) {
+        return true;
+      }
+
+      return !result.overwrites.length && !result.combines.length && !result.errors.length;
+    }
+
+    function isSuccessfulCombinesResults(results) {
+      let success = true;
+      if (!results || !results.length) {
+        return success;
+      }
+
+      let i = results.length;
+      let result;
+      while (success || i !== 0) {
+        result = results[i - 1];
+        success = result.overwrites + result.combines + result.errors;
+        i -= 1;
+      }
+
+      return success;
+    }
+
+    function isSuccessfulMoved(overwriteResult, combinesResult) {
+      return isSuccessfulResult(overwriteResult) && isSuccessfulCombinesResults(combinesResult);
+    }
+
+    // Parallel combine folders returning result for combining
+    async function combine(folders, files, destination) {
+      let movedFiles = []; 
+      let movedFilesErrs = [];
+      if (files.length) {
+        movedFiles = await Promise.all(files.map(file => FileService.MoveFile(user, file.fileId, destination, mainFolder, replaceAll, true, destinationPath)));
+        movedFilesErrs = getMoveErrs(movedFiles);
+      }
+      
+      let movedFolders = [];
+      let moveFoldersErrs = [];
+      if (folders.length) {
+        movedFolders = await Promise.all(folders.map(folder => MoveFolder(user, folder.id, destination, mainFolder, combineAll, replaceAll, combineAll, true, destinationPath)));
+        moveFoldersErrs = getMoveErrs(movedFolders);
+      }
+
+      // Get other than exists errors
+      const moveErrs = getFileNotOverwriteErrs(movedFilesErrs).concat(getFolderNotOverwriteErrs(moveFoldersErrs));
+      // Get non errors for nested folders on backwards
+      const moveSuccess = getSuccessMoveOps(movedFiles.concat(movedFolders));
+
+      return getResult(
+        destination,
+        getFileOverwriteErrs(movedFilesErrs).concat(getFolderOverwriteErrs(moveFoldersErrs)),
+        getFolderCombineErrs(moveFoldersErrs),
+        getRemovedFolders(moveSuccess),
+        moveSuccess.length,
+        moveErrs,
+      );
+    }
+
+    // Parallel overwrites files returning result for combining
+    async function overwrite(overwrites) {
+      const overwritedFiles = await Promise.all(overwrites.map(overwrite => FileService.MoveFile(user, overwrite.item.fileId, overwrite.destination.id, mainFolder, true, true, overwrite.destination.destinationPath)));
+      const overwritedFilesErrs = getMoveErrs(overwritedFiles);
+      // Get other than exists errors
+      const overWriteErrs = getFileNotOverwriteErrs(overwritedFilesErrs);
+      // Get non errors for nested folders removed on backwards
+      const moveSuccess = getSuccessMoveOps(overwritedFiles);
+
+      return getResult(
+        destination,
+        getFileOverwriteErrs(overWriteErrs),
+        [],
+        getRemovedFolders(moveSuccess),
+        moveSuccess.length,
+        overWriteErrs,
+      );
+    }
+
+    // Nested folders
+    const folders = folderData.folderTree.children;
+    // Nested files
+    const files = folderData.folderTree.files;
+    const destination = destFolderTree.id;
+    let combineResult;
+    if (folders.length || files.length) {
+      combineResult = await combine(folders, files, destination);
+    }
+
+    // Combining empty folder...or successful combine result
+    if (!combineResult || isSuccessfulResult(combineResult)) {
+      await Delete(user, folderData.folder.id);
+      const children = await GetChildren(user, mainFolder, { attributes: ['id']});
+      const childrenIds = children.map(child => child.id);
+      setResultAccumEnd(await removeEmptyFolderParents(user, folderData.folder.parentId, mainFolder, childrenIds));
+      return resultAcum;
+    }
+
+    // Accumulate combine results
+    setResultAccum(combineResult);
+    if (combineResult.errors.length || (combineResult.overwrites.length && !replaceAll) || (combineResult.combines.length && !combineAll)) {
+      return resultAcum;
+    }
+
+    let overwritesResult;
+    // If we have overwrites from previous call and we can replace them all
+    if (combineResult.overwrites.length && replaceAll) {
+      overwritesResult = await overwrite(combineResult.overwrites);
+      // Accumulate overwrites results
+      setResultAccum(overwritesResult);
+      if (overwritesResult.errors.length) {
+        console.log(JSON.stringify(resultAcum));
+        return resultAcum;
+      }
+    }
+
+    let conmbinesResults;
+    // If we have combines from previous call and we can combine them all
+    if (combineResult.combines.length && combineAll) {
+      conmbinesResults = await Promise.all(
+        combineResult.combines.map(async toCombineFolder => 
+          CombineFolder(
+            user, 
+            { folderTree: await GetTree(user, toCombineFolder.item.id), folder: toCombineFolder.item }, 
+            await GetTree(user, toCombineFolder.destination.id), 
+            toCombineFolder.destination.destinationPath,
+            destination,
+            replaceAll,
+            true
+          )
+        )
+      );
+      // Accumulate combines results
+      setResultAccumFromCombines(conmbinesResults);
+      if (conmbinesResults.errors.length) {
+        return resultAcum;
+      }
+    }
+
+    if (isSuccessfulMoved(overwritesResult, conmbinesResults)) {
+      // I was combined, remove me!
+      await Delete(user, folderData.folder.id);
+      const children = await GetChildren(user, mainFolder, { attributes: ['id']});
+      const childrenIds = children.map(child => child.id);
+      // And get empty parents folder for deleting in case they are empty...and add them in removedFolders result accum
+      setResultAccumEnd(await removeEmptyFolderParents(user, folderData.folder.parentId, mainFolder, childrenIds));
+    }
+    
+    return resultAcum;
+  }
+  
+  const removeEmptyFolderParents = async (user, parentId, limitId, childrens) => {
+    // Go back on the tree and delete folders
+    if (parentId && parentId !== limitId) {
+      const folder = await Model.folder.findOne({ where: { id: { [Op.eq]: parentId }, user_id: { [Op.eq]: user.id }}, raw: true });
+      const parentHasFolders = await Model.folder.findOne({ where: { parent_id: { [Op.eq]: parentId }, user_id: { [Op.eq]: user.id } }});
+      const parentHasFiles = await Model.file.findOne({ where: { folder_id: { [Op.eq]: parentId } }});
+      if (!parentHasFolders && !parentHasFiles) {
+        await Delete(user, folder.id);
+        // We actually want only removed folders ids from current front list view
+        if (childrens.includes(parentId)) {
+          return [parentId].concat(await removeEmptyFolderParents(user, folder.parentId, limitId, childrens));
+        }
+
+        // If not...we do not include it for controlling array nested size
+        return [].concat(await removeEmptyFolderParents(user, folder.parentId, limitId, childrens));
+      }
+    }
+
+    return [];
+  }
+
+  const GetChildren = async (user, folderId, options = {}) => {
+    const query = {
+      where: {
+        user_id: { [Op.eq]: user.id },
+        parent_id: { [Op.eq]: folderId }
+      },
+      raw: true
+    };
+
+    if (options.attributes) {
+      query.attributes = options.attributes;
+    }
+
+    return Model.folder.findAll(query);
+  }
+
+  const MoveFolder = (user, folderId, destination, mainFolder, combine = false, replaceAll = false, combineAll = false, isCombining = false, destinationPath = '') => {
+    function resolveOrReject(response, resolve, reject) {
+      if (isCombining) {
+        response.error = [response.error];
+        return resolve(response);
+      }
+
+      return reject(response);
+    }
+
     return new Promise(async (resolve, reject) => {
-      const folder = await Model.folder.findOne({ where: { id: { [Op.eq]: folderId } } })
+      let response;
+      const folder = await Model.folder.findOne({ where: { id: { [Op.eq]: folderId } }, raw: true })
       const destinationFolder = await Model.folder.findOne({ where: { id: { [Op.eq]: destination } } })
 
       if (!folder || !destinationFolder) {
-        console.error('Folder does not exists')
-        return resolve(true)
+        response = { error: { message: 'Folder does not exists' }, item: folder, destination };
+        return resolveOrReject(response, resolve, reject);
       }
 
       const originalName = App.services.Crypt.decryptName(folder.name, folder.parentId)
+      // we don't want ecrypted name on front
+      folder.name = originalName;
       const destinationName = App.services.Crypt.encryptName(originalName, destination)
+      destinationPath = destinationPath + '/' + originalName;
 
       const exists = await Model.folder.findOne({
         where: {
@@ -408,24 +664,57 @@ module.exports = (Model, App) => {
         }
       })
 
-      if (exists && !replace) {
-        return reject(Error('Destination contains a folder with the same name'))
+      if (exists && !combine) {
+        response = { error: { message: 'Destination contains a folder with the same name' }, item: folder, destination: { id: destination, destinationPath }};
+        return resolveOrReject(response, resolve, reject);
       }
 
       try {
         if (user.mnemonic === 'null') throw new Error('Your mnemonic is invalid');
 
-        folder.update({
-          parentId: destination,
-          name: destinationName
-        }).then(async (res) => {
-          await Model.folder.rebuildHierarchy();
-          resolve(true);
-        }).catch((err) => {
-          reject(err);
-        });
+        if (exists && combine) {
+          const toCombineFolder = { folderTree: await GetTree(user, folderId), folder };
+          const destFolderTree = await GetTree(user, exists.id);
+          const result = await CombineFolder(user, toCombineFolder, destFolderTree, destinationPath, mainFolder, replaceAll, combineAll);
+          const errors = result.results.reduce((allResults, childResult) => allResults.concat(childResult.overwrites, childResult.combines, childResult.errors), []);
+          if (isCombining) {
+            response = { error: errors, item: folder, destination: { id: exists.id, destinationPath } };
+            return resolve(response);
+          }
+
+          response = { result, removedFolders: result.removedFolders, item: folder, destination: { id: destination, destinationPath } };
+          if (replaceAll && combineAll) {
+            return resolve(response);
+          } else if ((result.overwrites > 0 && !replaceAll) || (result.combines > 0 && !combineAll)) {
+            response.error = { message: 'Destination contains a folder with the same name' };
+            return reject(response);
+          } else if (result.errors > 0) {
+            response.error = { message: 'Combine folder error' };
+            return reject(response);
+          } else {
+            return resolve(response);
+          }
+        } else {
+          const previousParentFolder = folder.parentId;
+          folder.parentId = destination;
+          folder.name = destinationName;
+          const result = await Model.folder.update(folder, { where: { id: folder.id }});
+          // we don't want ecrypted name on front
+          folder.name = originalName;
+          response = { result, item: folder, destination: { id: destination, destinationPath }};
+          if (previousParentFolder === mainFolder) {
+            return resolve(response);
+          }
+
+          // came from nested 'combine', check backwards origin parent folder and parent parents folders and remove them if they're empty
+          const children = await GetChildren(user, mainFolder, { attributes: ['id']});
+          const childrenIds = children.map(child => child.id);
+          response.removedFolders = await removeEmptyFolderParents(user, previousParentFolder, mainFolder, childrenIds);
+          resolve(response);
+        }
       } catch (error) {
-        reject(error);
+        response = { error: { message: error.message }, item: folder, destination: { id: destination, destinationPath } };
+        return resolveOrReject(response, resolve, reject);
       }
     })
   }
@@ -434,6 +723,7 @@ module.exports = (Model, App) => {
     Name: 'Folder',
     Create,
     Delete,
+    GetChildren,
     GetTree,
     GetTreeSize,
     GetParent,
@@ -442,6 +732,7 @@ module.exports = (Model, App) => {
     GetBucketList,
     MoveFolder,
     Download,
-    CreateZip
+    CreateZip,
+    removeEmptyFolderParents
   }
 }

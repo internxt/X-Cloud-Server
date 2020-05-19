@@ -305,14 +305,25 @@ module.exports = (Model, App) => {
     })
   }
 
-  const MoveFile = (user, fileId, destination, replace = false) => {
+  const MoveFile = (user, fileId, destination, mainFolder, replace = false, isCombining = false, destinationPath = '') => {
+    function resolveOrReject(response, resolve, reject) {
+      if (isCombining) {
+        return resolve(response);
+      }
+
+      return reject(response);
+    }
+
     return new Promise(async (resolve, reject) => {
-      const file = await Model.file.findOne({ where: { fileId: { [Op.eq]: fileId } } })
+      let response;
+      const file = await Model.file.findOne({ where: { fileId: { [Op.eq]: fileId } }})
       if (!file) {
-        reject(new Error('File not found'))
+        response = { error: { message: 'File not found' }, item: file, destination: { id: destination, destinationPath } };
+        return resolveOrReject(response, resolve, reject);
       } else {
         const originalName = App.services.Crypt.decryptName(file.name, file.folder_id)
-        const destinationName = App.services.Crypt.encryptName(originalName, destination)
+        const destinationName = App.services.Crypt.encryptName(originalName, destination);
+        destinationPath = destinationPath + '/' + originalName;
 
         const exists = await Model.file.findOne({
           where: {
@@ -321,19 +332,38 @@ module.exports = (Model, App) => {
             type: { [Op.eq]: file.type }
           }
         })
-
         if (exists && !replace) {
-          reject(Error('Destination contains a file with the same name'))
+          // we don't want ecrypted name on front
+          file.setDataValue('name', originalName);
+          response = { error: { message: 'Destination contains a file with the same name' }, item: file, destination: { id: destination, destinationPath } };
+          return resolveOrReject(response, resolve, reject);
         } else {
           if (exists) {
-            await Delete(user, exists.bucket, exists.fileId)
-            console.log('Delete destination file')
+            if (isCombining) {
+              // avoid timeout on request for nested combines
+              Delete(user, exists.bucket, exists.fileId);
+            } else {
+              await Delete(user, exists.bucket, exists.fileId)
+            }
           }
 
-          file.update({
+          const previousParentFolder = file.folder_id;
+          const result = await file.update({
             folder_id: parseInt(destination, 0),
             name: App.services.Crypt.encryptName(originalName, destination)
-          }).then(resolve).catch(reject)
+          });
+          // we don't want ecrypted name on front
+          file.setDataValue('name', originalName);
+          response = { result: result, item: file, destination: { id: destination, destinationPath }};
+          if (previousParentFolder === mainFolder) {
+            return resolve(response);
+          }
+
+          // came from nested 'combine', check backwards origin parent folder and parent parents folders and remove them if they're empty
+          const children = await App.services.Folder.GetChildren(user, mainFolder, { attributes: ['id']});
+          const childrenIds = children.map(child => child.id);
+          response.removedFolders = await App.services.Folder.removeEmptyFolderParents(user, previousParentFolder, mainFolder, childrenIds);
+          resolve(response);
         }
       }
     })

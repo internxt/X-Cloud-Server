@@ -196,14 +196,20 @@ module.exports = (Router, Service, Logger, App) => {
   Router.post('/storage/moveFolder', passportAuth, function (req, res) {
     const folderId = req.body.folderId;
     const destination = req.body.destination;
-    const replace = req.body.overwritte === true;
+    const combine = req.body.combine === true;
+    const replaceAll = req.body.replaceAll === true;
+    const combineAll = req.body.combineAll === true;
+    const path = req.body.destinationPath;
     const user = req.user;
+    const mainFolder = req.body.mainFolder;
     
-    Service.Folder.MoveFolder(user, folderId, destination, replace).then(() => {
-      res.status(200).json({ moved: true });
+    Service.Folder.MoveFolder(user, folderId, destination, mainFolder, combine, replaceAll, combineAll, false, path).then((result) => {
+      res.status(200).json({ moved: true, removedFolders: result.removedFolders, item: result.item, destination: result.destination });
     }).catch((error) => {
-      if (error.message && error.message.includes('same name')) {
-        res.status(501).json({ message: error.message });
+      if (error.error && error.error.message && error.error.message.includes('same name')) {
+        res.status(501).json(error);
+      } else {
+        res.status(500).json(error);
       }
     })
   })
@@ -350,12 +356,16 @@ module.exports = (Router, Service, Logger, App) => {
     const destination = req.body.destination;
     const replace = req.body.overwritte === true;
     const user = req.user;
+    const path = req.body.destinationPath;
+    const mainFolder = req.body.mainFolder;
 
-    Service.Files.MoveFile(user, fileId, destination, replace).then(() => {
-      res.status(200).json({ moved: true });
+    Service.Files.MoveFile(user, fileId, destination, mainFolder, replace, false, path).then((result) => {
+      res.status(200).json({ moved: true, removedFolders: result.removedFolders, item: result.item, destination: result.destination });
     }).catch((error) => {
-      if (error.message && error.message.includes('same name')) {
-        res.status(501).json({ message: error.message });
+      if (error.error.message && error.error.message.includes('same name')) {
+        res.status(501).json(error);
+      } else {
+        res.status(500).json(error);
       }
     })
   })
