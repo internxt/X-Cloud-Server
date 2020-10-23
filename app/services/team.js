@@ -135,7 +135,7 @@ module.exports = (Model, App) => {
         reject();
       }
     }).catch((err) => { reject("Error deleting database"); })
-  };
+  });
 
   const deleteAllTeamMembers = (teamId) => new Promise((resolve, reject) => {
     Model.teams_members.destroy({
@@ -147,7 +147,7 @@ module.exports = (Model, App) => {
     }).catch((err) => {
       reject("Error deleting database");
     })
-  };
+  });
 
   const deleteTeamMember = (userEmail) => new Promise((resolve, reject) => {
     Model.teams_members.destroy({
@@ -163,7 +163,7 @@ module.exports = (Model, App) => {
     }).catch ((err) => {
       reject("Error deleting database")
     })
-  }
+  });
 
   return {
     Name: 'Team',
