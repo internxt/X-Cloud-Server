@@ -46,7 +46,7 @@ module.exports = (Router, Service, Logger, App) => {
             
           ).then((folder) => {
             console.log("TEAM FOLDER CREATED: ", folder); //debug
-            res.status(200).send({ folder });           
+            res.status(200).json({ folder });           
           }).catch((err) => {
             console.log('ERROR CREATING TEAM FOLDER', err);
           });
@@ -73,4 +73,31 @@ module.exports = (Router, Service, Logger, App) => {
       });
   });
 
+  Router.delete('/teams/deleteTeam', passportAuth, (req, res) => {
+    const user = req.user;
+
+    Service.Team.getTeamByAdmin(user.email).then((findedTeam) => {
+      Service.Team.deleteTeam(findedTeam.id).then(() => {
+        Service.Team.deleteAllTeamMembers(findedTeam.id).then(() => {
+          res.status(200).send({});
+        }).catch((err) => { 
+          res.status(500).send({});
+        })  
+      }).catch((err) => { 
+        res.status(500).send({}); 
+      })
+    }).catch((err) => { 
+      res.status(500).send({}); 
+    })
+  });
+
+  Router.delete('/teams/deleteMember', passportAuth, (req, res) => {
+    const member = req.body.memberEmail;
+
+    Service.Team.deleteMember(member).then(() => {
+      res.status(200).send({});
+    }).catch((err) => {
+      res.status(500).send({});
+    });
+  });
 };

@@ -109,6 +109,62 @@ module.exports = (Model, App) => {
     });
   };
 
+  getTeamByAdmin = (adminEmail) => {
+    Model.teams.findOne({
+      where: {
+        admin: { [Op.eq]: adminEmail }
+      }
+    }).then((team) => {
+      if (!team) {
+        return reject("No team");
+      } else {
+        resolve(team);
+      }
+    }).catch((err) => { reject("Error querying database: ")})
+  }
+
+  const deleteTeam = (teamId) => new Promise((resolve, reject) => {
+    Model.teams.destroy({
+      where: {
+        id: { [Op.eq]: teamId }
+      }
+    }).then((deletedTeam) => {
+      if (deletedTeam === 1) {
+        resolve();
+      } else {
+        reject();
+      }
+    }).catch((err) => { reject("Error deleting database"); })
+  };
+
+  const deleteAllTeamMembers = (teamId) => new Promise((resolve, reject) => {
+    Model.teams_members.destroy({
+      where: {
+        team_id: { [Op.eq]: teamId }
+      }
+    }).then((deletedMembers) => {
+      resolve();
+    }).catch((err) => {
+      reject("Error deleting database");
+    })
+  };
+
+  const deleteTeamMember = (userEmail) => new Promise((resolve, reject) => {
+    Model.teams_members.destroy({
+      where: {
+        user: { [Op.eq]: userEmail }
+      }
+    }).then((deletedMember) => {
+      if (deletedMember === 1) {
+        resolve();
+      } else {
+        reject();
+      }
+    }).catch ((err) => {
+      reject("Error deleting database")
+    })
+  }
+
   return {
     Name: 'Team',
     create,
@@ -116,6 +172,10 @@ module.exports = (Model, App) => {
     getTeamById,
     generateBridgeTeamUser,
     getIdTeamByUser,
-    getTeamByMember
+    getTeamByMember,
+    getTeamByAdmin,
+    deleteTeam,
+    deleteAllTeamMembers,
+    deleteTeamMember
   };
 };

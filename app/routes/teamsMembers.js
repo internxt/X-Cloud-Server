@@ -73,12 +73,10 @@ module.exports = (Router, Service, Logger, App) => {
 
     console.log("USUARIO QUE PREGUNTA", userEmail); //debug
 
-    Service.TeamsMembers.getIdTeamByUser(userEmail)
-      .then((team) => {
-        Service.Team.getTeamById(team.id_team).then((team2) => {
-          console.log("FINDED TEAM", team2); //debug
-          res.status(200).json(team2.dataValues);
-        }).catch((err) => {})
+    Service.Team.getTeamByMember(userEmail)
+      .then((team) => {        
+        console.log("FINDED TEAM", team2); //debug
+        res.status(200).json(team2.dataValues);        
       })
       .catch((err) => {
         res.status(500).json(err);
