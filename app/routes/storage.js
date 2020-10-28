@@ -105,19 +105,36 @@ module.exports = (Router, Service, Logger, App) => {
   Router.post('/storage/folder', passportAuth, (req, res) => {
     const { folderName } = req.body;
     const { parentFolderId } = req.body;
-    const { teamId } = req.body;
+    
 
     const { user } = req;
     user.mnemonic = req.headers['internxt-mnemonic'];
-
-    Service.Folder.Create(user, folderName, parentFolderId, teamId)
-      .then((result) => {
-        res.status(201).json(result);
-      })
-      .catch((err) => {
-        Logger.warn(err);
-        res.status(500).json({ error: err.message });
-      });
+    /*
+    if (isTeam) {
+      Service.Team.getTeamByAdmin(user.email).then((team) => {
+        if(!team) {
+          res.status(500).send({});
+        } else {
+          Service.Folder.Create(user, folderName, parentFolderId, teamId).then((result) => {
+            res.status(201).json(result);
+          }).catch((err) => {
+            Logger.warn(err);
+            res.status(500).json({ error: err.message });
+        });
+        }
+      }).catch((err) => { res.status(500).json({ message: err }) });
+    } else {
+      */
+      Service.Folder.Create(user, folderName, parentFolderId)
+        .then((result) => {
+          res.status(201).json(result);
+        })
+        .catch((err) => {
+          Logger.warn(err);
+          res.status(500).json({ error: err.message });
+        });
+    //}
+    
   });
 
   /**

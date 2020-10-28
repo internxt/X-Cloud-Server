@@ -1,3 +1,4 @@
+const { init } = require('nconf');
 const passport = require('../middleware/passport');
 const { passportAuth } = require('../middleware/passport');
 
@@ -31,28 +32,21 @@ module.exports = (Router, Service, Logger, App) => {
       email: bridgeUser,
       mnemonic: mnemonic
       }).then((userData) => {
-        // Creating team parent folder
+        console.log("POST INITIALIZE USERDATA: ", userData);
+
         Service.User.FindUserByEmail(bridgeUser).then((teamUser) => {
           userData.id = teamUser.id;
           userData.email = teamUser.email;
           userData.password = teamUser.password;
           userData.mnemonic = teamUser.mnemonic;
-          userData.root_folder_id = teamUser.root_folder_id;
+          //userData.root_folder_id = teamUser.root_folder_id;
 
-          Service.Folder.Create(
-            userData,
-            teamUser.name,
-            userData.root_folder_id
-            
-          ).then((folder) => {
-            console.log("TEAM FOLDER CREATED: ", folder); //debug
-            res.status(200).json({ folder });           
-          }).catch((err) => {
-            console.log('ERROR CREATING TEAM FOLDER', err);
-          });
+          res.status(200).json({userData})
         }).catch((err) => {
           console.log('ERROR FINDING TEAM USER', err);
-        });
+        });      
+
+        res.status(200).json(initUser);
       }).catch((err) => {
         Logger.error(`${err.message}\n${err.stack}`);
         res.status(500).send(err.message);
@@ -72,6 +66,8 @@ module.exports = (Router, Service, Logger, App) => {
         res.status(500).json(err);
       });
   });
+
+  
 
   Router.delete('/teams/deleteTeam', passportAuth, (req, res) => {
     const user = req.user;

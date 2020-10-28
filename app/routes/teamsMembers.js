@@ -71,12 +71,10 @@ module.exports = (Router, Service, Logger, App) => {
   Router.get('/teams-members/:user', passportAuth, (req, res) => {
     const userEmail  = req.params.user;
 
-    console.log("USUARIO QUE PREGUNTA", userEmail); //debug
-
     Service.Team.getTeamByMember(userEmail)
       .then((team) => {        
-        console.log("FINDED TEAM", team2); //debug
-        res.status(200).json(team2.dataValues);        
+        console.log("FINDED TEAM", team); //debug
+        res.status(200).json(team);        
       })
       .catch((err) => {
         res.status(500).json(err);

@@ -18,9 +18,7 @@ const swaggerSpec = require('~config/initializers/swagger');
 const team = require('~services/team');
 
 const { passportAuth } = passport;
-let isTeamActivated = false;
-let userTeam = null;
-let rootFolderId = 0;
+
 
 module.exports = (Router, Service, Logger, App) => {
   // Documentation
@@ -149,10 +147,10 @@ module.exports = (Router, Service, Logger, App) => {
           Service.Team.getTeamByMember(req.body.email).then(async (team) => {
             console.log("USERTEAM: ", team); //debug
             userTeam = team;
-            if (team !== undefined) {
+            if (team) {
               rootFolderId = (await Service.User.FindUserByEmail(team.bridge_user)).root_folder_id;
               responseTeam = await Service.Storj.IsUserActivated(team.bridge_user);
-              //console.log("RESPONSE TEAM ", responseTeam); //debug
+              console.log("RESPONSE TEAM ", responseTeam); //debug
               if (responseTeam) {
                 console.log("IS TEAM ACTIVATED: ", responseTeam.data.activated); //debug
                 isTeamActivated = responseTeam.data.activated;
@@ -170,7 +168,7 @@ module.exports = (Router, Service, Logger, App) => {
             resolve();
           }).catch((error) => {
             Logger.error(error.stack);
-            reject()
+            resolve();
           });
         })
 
@@ -204,6 +202,13 @@ module.exports = (Router, Service, Logger, App) => {
           Service.User.LoginFailed(req.body.email, false);
           Service.User.UpdateAccountActivity(req.body.email);
 
+          let teamRol = '';
+          if (userTeam && userTeam.admin === req.body.email) {
+            teamRol = 'admin';
+          } else if (userTeam) {
+            teamRol = 'member';
+          }
+
           res.status(200).json({
             user: {
               userId: userData.userId,
@@ -216,7 +221,8 @@ module.exports = (Router, Service, Logger, App) => {
               credit: userData.credit
             },
             token,
-            userTeam
+            userTeam,
+            teamRol
           });
         } else {
           // Wrong password
