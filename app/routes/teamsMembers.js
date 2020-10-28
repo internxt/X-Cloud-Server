@@ -3,9 +3,14 @@ const sgMail = require('@sendgrid/mail');
 const { passportAuth } = require('../middleware/passport');
 
 module.exports = (Router, Service, Logger, App) => {
-  Router.post('/teams-members', passportAuth, (req, res) => {
+  Router.post('/teams-members', passportAuth, async (req, res) => {
     const { members } = req.body;
     const { user } = req.user;
+
+    let team = await Service.Team.getTeamByMember(user.email);
+    if (!team || team.admin !== user.email) {
+      res.status(500).send();
+    }
 
     Service.Team.getTeamByIdUser(user)
       .then((team) => {

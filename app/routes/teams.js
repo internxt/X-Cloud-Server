@@ -3,20 +3,21 @@ const passport = require('../middleware/passport');
 const { passportAuth } = require('../middleware/passport');
 
 module.exports = (Router, Service, Logger, App) => {
-  Router.get('/teams/:user', passportAuth, (req, res) => {
+  Router.get('/teams/:user', passportAuth, async (req, res) => {
     const { user } = req.params;
-    console.log("TEAM USER", user); //debug
+
+    let team = await Service.Team.getTeamByMember(user.email);
+    if (!team || team.admin !== user.email) {
+      res.status(500).send();
+    }
 
     Service.Team.getTeamByIdUser(user)
       .then((team) => {
         if(team) {
-          console.log("USER TEAM", team.dataValues); //debug
           res.status(200).json(team.dataValues);
         } else {
-          console.log("NO ADMIN");
           res.status(200).json({});
-        }          
-            
+        }                     
       })
       .catch((err) => {
         res.status(500).json(err);
@@ -24,16 +25,20 @@ module.exports = (Router, Service, Logger, App) => {
   });
 
 
-  Router.post('/teams/initialize', passportAuth, (req, res) => {
+  Router.post('/teams/initialize', passportAuth, async (req, res) => {
     const bridgeUser = req.body.email;
     const mnemonic = req.body.mnemonic;
+    const user = req.user;
+
+    let team = await Service.Team.getTeamByMember(user.email);
+    if (!team || team.admin !== user.email) {
+      res.status(500).send();
+    }
 
     Service.User.InitializeUser({
       email: bridgeUser,
       mnemonic: mnemonic
       }).then((userData) => {
-        console.log("POST INITIALIZE USERDATA: ", userData);
-
         Service.User.FindUserByEmail(bridgeUser).then((teamUser) => {
           userData.id = teamUser.id;
           userData.email = teamUser.email;
@@ -55,8 +60,13 @@ module.exports = (Router, Service, Logger, App) => {
   });
 
 
-  Router.get('/teams/getById/:id', passportAuth, (req, res) => {
+  Router.get('/teams/getById/:id', passportAuth, async (req, res) => {
     const { id } = req.params;
+
+    let team = await Service.Team.getTeamByMember(user.email);
+    if (!team || team.admin !== user.email) {
+      res.status(500).send();
+    }
 
     Service.Team.getTeamById(id)
       .then((team) => {
@@ -69,8 +79,13 @@ module.exports = (Router, Service, Logger, App) => {
 
   
 
-  Router.delete('/teams/deleteTeam', passportAuth, (req, res) => {
+  Router.delete('/teams/deleteTeam', passportAuth, async (req, res) => {
     const user = req.user;
+
+    let team = await Service.Team.getTeamByMember(user.email);
+    if (!team || team.admin !== user.email) {
+      res.status(500).send();
+    }
 
     Service.Team.getTeamByAdmin(user.email).then((findedTeam) => {
       Service.Team.deleteTeam(findedTeam.id).then(() => {
@@ -87,8 +102,13 @@ module.exports = (Router, Service, Logger, App) => {
     })
   });
 
-  Router.delete('/teams/deleteMember', passportAuth, (req, res) => {
+  Router.delete('/teams/deleteMember', passportAuth, async (req, res) => {
     const member = req.body.memberEmail;
+
+    let team = await Service.Team.getTeamByMember(user.email);
+    if (!team || team.admin !== user.email) {
+      res.status(500).send();
+    }
 
     Service.Team.deleteMember(member).then(() => {
       res.status(200).send({});

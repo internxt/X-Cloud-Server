@@ -125,11 +125,9 @@ module.exports = (Model, App) => {
   };
 
   const InitializeUser = (user) => Model.users.sequelize.transaction((t) =>
-    // debug console.log('user email', user)
     Model.users
       .findOne({ where: { email: { [Op.eq]: user.email } } })
       .then(async (userData) => {
-        // debug console.log(userData)
         if (userData.root_folder_id) {
           userData.mnemonic = user.mnemonic;
 

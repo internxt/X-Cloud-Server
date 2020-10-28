@@ -9,14 +9,10 @@ module.exports = (Router, Service, Logger, App) => {
 
     Service.Team.getTeamByMember(user)
       .then((team) => {
-         console.log("ACTIVATING TEAM ", team) // debug
         if (team.dataValues.bridge_user === bridgeUser) {
-          console.log("TEAM EMAIL ", team.bridge_user); //debug
           Service.Storj.IsUserActivated(bridgeUser)
             .then((responseTeam) => {
-              console.log("RESPONSE TEAM ", responseTeam); //debug
               if (responseTeam.status === 200) {
-                console.log("IS ACTIVATED: ", responseTeam.data.activated); //debug
                 const isTeamActivated = responseTeam.data.activated;
                 const teamId = team.id;
 
