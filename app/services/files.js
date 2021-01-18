@@ -13,7 +13,7 @@ module.exports = (Model, App) => {
   const log = App.logger;
 
   const CreateFile = async (user, file) => {
-    if (!file || !file.fileId || !file.bucket || !file.size || !file.folder_id || !file.name) {
+    if (file.size !== 0 && (!file || !file.fileId || !file.bucket || !file.size || !file.folder_id || !file.name)) {
       throw Error('Invalid metadata for new file');
     }
 
@@ -42,7 +42,7 @@ module.exports = (Model, App) => {
       const fileInfo = {
         name: file.name,
         type: file.type,
-        size: file.size,
+        size: file.size || 0,
         folder_id: folder.id,
         fileId: file.file_id,
         bucket: file.bucket,
@@ -61,6 +61,31 @@ module.exports = (Model, App) => {
       }
 
       return Model.file.create(fileInfo);
+    });
+  };
+
+  const RemoveFileEntry = async (user, file) => {
+    if (file.size !== 0 || !file || !file.fileId || !file.bucket || !file.folder_id || !file.name) {
+      throw Error('Invalid metadata for new file');
+    }
+
+    const folder = await Model.folder.findOne({
+      where: {
+        id: { [Op.eq]: file.folder_id },
+        user_id: { [Op.eq]: user.id }
+      }
+    });
+
+    if (!folder) {
+      throw Error('Folder not found / Is not your folder');
+    }
+
+    return Model.file.destroy({
+      where: {
+        name: { [Op.eq]: file.name },
+        folder_id: { [Op.eq]: folder.id },
+        type: { [Op.eq]: file.type }
+      }
     });
   };
 
@@ -439,6 +464,7 @@ module.exports = (Model, App) => {
     MoveFile,
     ListAllFiles,
     DownloadFolderFile,
-    isFileOfTeamFolder
+    isFileOfTeamFolder,
+    RemoveFileEntry
   };
 };

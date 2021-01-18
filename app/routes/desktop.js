@@ -3,6 +3,9 @@ const path = require('path');
 const async = require('async');
 
 const { passportAuth } = require('../middleware/passport');
+const logger = require('../../lib/logger');
+
+const Logger = logger.getInstance();
 
 module.exports = (Router, Service) => {
   Router.get('/storage/tree', passportAuth, (req, res) => {
@@ -168,6 +171,18 @@ module.exports = (Router, Service) => {
         // console.log(pathResults)
         res.status(200).send({ result: 'ok', isRoot: false, path: pathResults });
       }
+    });
+  });
+
+  Router.delete('/storage/file', passportAuth, (req, res) => {
+    const { user } = req;
+    const { file } = req.body;
+
+    Service.Files.RemoveFileEntry(user, file).then((result) => {
+      res.status(200).json(result);
+    }).catch((error) => {
+      Logger.error(error);
+      res.status(400).json({ error: error.message });
     });
   });
 };
