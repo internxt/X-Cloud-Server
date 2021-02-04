@@ -126,15 +126,23 @@ module.exports = (App, Service, socket) => {
   });
 
   socket.on('get-file', async (content) => {
+    const socketId = content.socketId;
+    const user = content.user;
+    user.mnemonic = content.mnemonic;
+    const fileIdInBucket = content.fileId;
+
     try {
-      jwt.verify(content.jwt, App.config.get('secrets').JWT)
+      jwt.verify(content.jwt, App.config.get('secrets').JWT);
 
-      const socketId = content.socketId;
-      const user = content.user;
-      user.mnemonic = content.mnemonic;
-      const fileIdInBucket = content.fileId;
+      App.logger.info(`Socket id: ${socketId}`);
+      App.logger.info(`mnemonic: ${user.mnemonic}`);
+      App.logger.info(`file id: ${fileIdInBucket}`);
 
-      if(fileId) {
+      if (fileIdInBucket) {
+        let intervalId = setInterval(() => {
+          socket.emit(`get-file-${socketId}-ping`);
+        }, 2000);
+
         const response = await Service.Files.Download(user, fileIdInBucket);
         const { filestream, downloadFile, folderId, name, type, size } = response;
 
@@ -142,24 +150,26 @@ module.exports = (App, Service, socket) => {
         const fileName = `${decryptedFileName}${type ? `.${type}` : ''}`;
 
         socket.emit(`get-file-${socketId}-sending-data`, { size, fileName });
-  
+
         filestream.on('data', (chunk) => {
           socket.emit(`get-file-${socketId}-stream`, chunk);
         });
 
         filestream.on('end', () => {
+          clearInterval(intervalId);
+          App.logger.info('finished');
           socket.emit(`get-file-${socketId}-finished`);
           fs.unlink(downloadFile, (error) => {
-            if (error) throw error
+            if (error) throw error;
           });
         });
-  
+
+        socket.on('disconnect', () => clearInterval(intervalId));
       } else {
         throw new Error('Missing file id');
       }
-
     } catch (err) {
-      socket.emit(`get-file-${socketId}-error`, { message: err.message })
-    } 
+      socket.emit(`get-file-${socketId}-error`, { message: err.message });
+    }
   });
 };

@@ -6,7 +6,8 @@ module.exports = (App, Service) => {
     path: '/api/sockets',
     cors: {
       origin: '*'
-    }
+    },
+    pingTimeout: 40000000
   });
   socketServer.on('connection', (socket) => {
     App.logger.info('Socket connected!');

@@ -175,7 +175,7 @@ module.exports = (Router, Service, App) => {
 
         res.status(500).json({ message: err });
       });
-    });
+  });
 
   /**
    * @swagger
