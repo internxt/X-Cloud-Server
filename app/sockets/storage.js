@@ -1,5 +1,6 @@
 const rimraf = require('rimraf');
 const fs = require('fs');
+const jwt = require('jsonwebtoken')
 
 module.exports = (App, Service, socket) => {
   socket.on('get-file-share', (content) => {
@@ -122,5 +123,43 @@ module.exports = (App, Service, socket) => {
         socket.emit(`get-file-share-${content.token}-error`, 'Invalid token');
       });
     }
+  });
+
+  socket.on('get-file', async (content) => {
+    try {
+      jwt.verify(content.jwt, App.config.get('secrets').JWT)
+
+      const socketId = content.socketId;
+      const user = content.user;
+      user.mnemonic = content.mnemonic;
+      const fileIdInBucket = content.fileId;
+
+      if(fileId) {
+        const response = await Service.Files.Download(user, fileIdInBucket);
+        const { filestream, downloadFile, folderId, name, type, size } = response;
+
+        const decryptedFileName = App.services.Crypt.decryptName(name, folderId);
+        const fileName = `${decryptedFileName}${type ? `.${type}` : ''}`;
+
+        socket.emit(`get-file-${socketId}-sending-data`, { size, fileName });
+  
+        filestream.on('data', (chunk) => {
+          socket.emit(`get-file-${socketId}-stream`, chunk);
+        });
+
+        filestream.on('end', () => {
+          socket.emit(`get-file-${socketId}-finished`);
+          fs.unlink(downloadFile, (error) => {
+            if (error) throw error
+          });
+        });
+  
+      } else {
+        throw new Error('Missing file id');
+      }
+
+    } catch (err) {
+      socket.emit(`get-file-${socketId}-error`, { message: err.message })
+    } 
   });
 };
