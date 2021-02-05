@@ -134,10 +134,6 @@ module.exports = (App, Service, socket) => {
     try {
       jwt.verify(content.jwt, App.config.get('secrets').JWT);
 
-      App.logger.info(`Socket id: ${socketId}`);
-      App.logger.info(`mnemonic: ${user.mnemonic}`);
-      App.logger.info(`file id: ${fileIdInBucket}`);
-
       if (fileIdInBucket) {
         const response = await Service.Files.Download(user, fileIdInBucket);
         const { filestream, downloadFile, folderId, name, type, size } = response;
