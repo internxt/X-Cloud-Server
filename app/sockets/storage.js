@@ -1,6 +1,6 @@
 const rimraf = require('rimraf');
 const fs = require('fs');
-const jwt = require('jsonwebtoken')
+const jwt = require('jsonwebtoken');
 
 module.exports = (App, Service, socket) => {
   socket.on('get-file-share', (content) => {
@@ -139,10 +139,6 @@ module.exports = (App, Service, socket) => {
       App.logger.info(`file id: ${fileIdInBucket}`);
 
       if (fileIdInBucket) {
-        let intervalId = setInterval(() => {
-          socket.emit(`get-file-${socketId}-ping`);
-        }, 2000);
-
         const response = await Service.Files.Download(user, fileIdInBucket);
         const { filestream, downloadFile, folderId, name, type, size } = response;
 
@@ -156,7 +152,6 @@ module.exports = (App, Service, socket) => {
         });
 
         filestream.on('end', () => {
-          clearInterval(intervalId);
           App.logger.info('finished');
           socket.emit(`get-file-${socketId}-finished`);
           fs.unlink(downloadFile, (error) => {
@@ -164,12 +159,20 @@ module.exports = (App, Service, socket) => {
           });
         });
 
-        socket.on('disconnect', () => clearInterval(intervalId));
+        socket.on('disconnect', () => App.logger.warn('Disconnected'));
       } else {
         throw new Error('Missing file id');
       }
     } catch (err) {
-      socket.emit(`get-file-${socketId}-error`, { message: err.message });
+      const isTokenError = err instanceof jwt.TokenExpiredError
+        || err instanceof jwt.JsonWebTokenError
+        || err instanceof jwt.NotBeforeError;
+
+      if (isTokenError) {
+        socket.emit(`get-file-${socketId}-error`, { message: 'Unauthorized', statusCode: 401 });
+      } else {
+        socket.emit(`get-file-${socketId}-error`, { message: err.message, statusCode: 500 });
+      }
     }
   });
 };
