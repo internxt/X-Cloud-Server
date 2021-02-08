@@ -131,6 +131,8 @@ module.exports = (App, Service, socket) => {
     user.mnemonic = content.mnemonic;
     const fileIdInBucket = content.fileId;
 
+    App.logger.info(`fileid ${fileIdInBucket}`)
+
     try {
       jwt.verify(content.jwt, App.config.get('secrets').JWT);
 
@@ -141,15 +143,15 @@ module.exports = (App, Service, socket) => {
         const decryptedFileName = App.services.Crypt.decryptName(name, folderId);
         const fileName = `${decryptedFileName}${type ? `.${type}` : ''}`;
 
-        socket.emit(`get-file-${socketId}-sending-data`, { size, fileName });
+        socket.emit(`get-file-${socketId}-${fileIdInBucket}-sending-data`, { size, fileName });
 
         filestream.on('data', (chunk) => {
-          socket.emit(`get-file-${socketId}-stream`, chunk);
+          socket.emit(`get-file-${socketId}-${fileIdInBucket}-stream`, chunk);
         });
 
         filestream.on('end', () => {
           App.logger.info('finished');
-          socket.emit(`get-file-${socketId}-finished`);
+          socket.emit(`get-file-${socketId}-${fileIdInBucket}-finished`);
           fs.unlink(downloadFile, (error) => {
             if (error) throw error;
           });
@@ -165,9 +167,9 @@ module.exports = (App, Service, socket) => {
         || err instanceof jwt.NotBeforeError;
 
       if (isTokenError) {
-        socket.emit(`get-file-${socketId}-error`, { message: 'Unauthorized', statusCode: 401 });
+        socket.emit(`get-file-${socketId}-${fileIdInBucket}-error`, { message: 'Unauthorized', statusCode: 401 });
       } else {
-        socket.emit(`get-file-${socketId}-error`, { message: err.message, statusCode: 500 });
+        socket.emit(`get-file-${socketId}-${fileIdInBucket}-error`, { message: err.message, statusCode: 500 });
       }
     }
   });
