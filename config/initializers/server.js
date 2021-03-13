@@ -1,7 +1,10 @@
 const express = require('express');
+const { graphqlHTTP } = require('express-graphql');
 const Logger = require('../../lib/logger');
 const Config = require('../config');
 const Database = require('./database');
+const graphQLSchema = require('../../app/graphql/index.schema');
+const rootGraphQL = require('../../app/graphql/index.root');
 
 /**
  * Instance of Server application
@@ -90,6 +93,14 @@ class Server {
     this.routes = Router(this.router, this.services, this);
     this.express.use(routesPrefix, this.routes);
     this.logger.info('Routes OK');
+  }
+
+  initGraphQL() {
+    this.express.use('/api/v2', graphqlHTTP({
+      schema: graphQLSchema,
+      rootValue: rootGraphQL,
+      graphiql: true
+    }));
   }
 }
 

@@ -14,4 +14,5 @@ App.start(() => {
   App.initServices(Services);
   App.initRoutes(Routes);
   App.initSocketServer(SocketServer);
+  App.initGraphQL();
 });
