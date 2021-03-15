@@ -1,5 +1,4 @@
 const sequelize = require('sequelize');
-const _ = require('lodash');
 
 const { Op } = sequelize;
 
@@ -16,8 +15,6 @@ module.exports = (Model) => {
     const result = [];
     const members = await getMembersByIdTeam(idTeam);
     const invitations = await getInvitationsByIdTeam(idTeam);
-    const admin = await getTeamsAdminById(idTeam);
-    _.remove(members, (member) => member.dataValues.user === admin.dataValues.admin);
     members.forEach((m) => result.push({ isMember: true, isInvitation: false, user: m.user }));
     invitations.forEach((m) => result.push({ isMember: false, isInvitation: true, user: m.user }));
     return result;
@@ -38,8 +35,8 @@ module.exports = (Model) => {
   }).then((teamMember) => (teamMember ? null : Model.teamsmembers.create({
     id_team: idTeam,
     user: userEmail,
-    bridgePassword,
-    bridgeMnemonic
+    bridge_password: bridgePassword,
+    bridge_mnemonic: bridgeMnemonic
   })));
 
   const saveMembersFromInvitations = (invitedMembers) => new Promise((resolve, reject) => {

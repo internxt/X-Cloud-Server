@@ -9,14 +9,16 @@ module.exports = () => {
   const getStorageProducts = (test = false) => new Promise((resolve, reject) => {
     const stripe = getStripe(test);
 
-    stripe.products.list({}, (err, products) => {
+    stripe.products.list({
+      limit: 100
+    }, (err, products) => {
       if (err) {
         reject(err);
       } else {
         const productsMin = products.data
-          .filter((p) => !!p.metadata.size_bytes)
+          .filter((p) => p.metadata.is_drive === '1')
           .map((p) => ({ id: p.id, name: p.name, metadata: p.metadata }))
-          .sort((a, b) => a.metadata.price_eur * 1 - b.metadata.price_eur * 1);
+          .sort((a, b) => a.metadata.size_bytes * 1 - b.metadata.size_bytes * 1);
         resolve(productsMin);
       }
     });
@@ -25,16 +27,16 @@ module.exports = () => {
   const getTeamProducts = (test = false) => new Promise((resolve, reject) => {
     const stripe = getStripe(test);
 
-    stripe.products.list({}, (err, products) => {
+    stripe.products.list({
+      limit: 100
+    }, (err, products) => {
       if (err) {
         reject(err);
       } else {
         const productsMin = products.data
-          .filter((x) => {
-            return !!x.metadata.is_teams;
-          })
+          .filter((p) => p.metadata.is_teams === '1')
           .map((p) => ({ id: p.id, name: p.name, metadata: p.metadata }))
-          .sort((a, b) => a.metadata.price_eur * 1 - b.metadata.price_eur * 1);
+          .sort((a, b) => a.metadata.size_bytes * 1 - b.metadata.size_bytes * 1);
         resolve(productsMin);
       }
     });
@@ -43,7 +45,7 @@ module.exports = () => {
   const getStoragePlans = (stripeProduct, test = false) => new Promise((resolve, reject) => {
     const stripe = getStripe(test);
 
-    stripe.plans.list({ product: stripeProduct },
+    stripe.plans.list({ product: stripeProduct, active: true },
       (err, plans) => {
         if (err) {
           reject(err.message);
@@ -63,7 +65,7 @@ module.exports = () => {
   const getTeamPlans = (stripeProduct, test = false) => new Promise((resolve, reject) => {
     const stripe = getStripe(test);
 
-    stripe.plans.list({ product: stripeProduct }, (err, plans) => {
+    stripe.plans.list({ product: stripeProduct, active: true }, (err, plans) => {
       if (err) {
         reject(err.message);
       } else {

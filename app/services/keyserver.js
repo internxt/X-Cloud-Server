@@ -3,20 +3,18 @@ const sequelize = require('sequelize');
 const { Op } = sequelize;
 
 module.exports = (Model) => {
-  const keysExists = (user) => new Promise((resolve, reject) => {
-    Model.keyserver.findOne({
-      where: {
-        user_id: { [Op.eq]: user.id }
-      }
-    }).then((keys) => {
-      if (keys) {
-        resolve(keys);
-      } else {
-        reject(Error('Keys not exists'));
-      }
-    }).catch(() => {
-      reject(Error('Error querying database'));
-    });
+  const keysExists = async (user) => {
+    if (!user) {
+      return false;
+    }
+    const keys = await getKeys(user);
+    return !!keys;
+  }
+
+  const getKeys = (user) => Model.keyserver.findOne({
+    where: {
+      user_id: { [Op.eq]: user.id }
+    }
   });
 
   const addKeysLogin = (userData, publicKey, privateKey, revocationKey) => new Promise((resolve, reject) => {
@@ -36,7 +34,8 @@ module.exports = (Model) => {
   return {
     Name: 'KeyServer',
     addKeysLogin,
-    keysExists
+    keysExists,
+    getKeys
 
   };
 };

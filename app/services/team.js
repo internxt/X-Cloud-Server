@@ -54,6 +54,17 @@ module.exports = (Model, App) => {
 
   const getTeamByMember = (email) => getIdTeamByUser(email).then((team) => (!team ? Promise.resolve() : getTeamById(team.id_team)));
 
+  const ApplyLicenseTeams = async (user, size) => {
+    const { GATEWAY_USER, GATEWAY_PASS } = process.env;
+
+    return axios.post(`${process.env.STORJ_BRIDGE}/gateway/upgrade`, {
+      email: user, bytes: size
+    }, {
+      headers: { 'Content-Type': 'application/json' },
+      auth: { username: GATEWAY_USER, password: GATEWAY_PASS }
+    });
+  };
+
   return {
     Name: 'Team',
     create,
@@ -63,6 +74,7 @@ module.exports = (Model, App) => {
     getIdTeamByUser,
     getTeamByMember,
     getTeamBridgeUser,
-    getPlans
+    getPlans,
+    ApplyLicenseTeams
   };
 };

@@ -38,6 +38,7 @@ module.exports = (Router, Service, App) => {
   Router.put('/tfa', passportAuth, (req, res) => {
     const user = req.user.email;
 
+    // TODO: REVISAR
     Service.User.FindUserByEmail(user).then((userData) => {
       if (userData.secret_2FA) {
         res.status(500).send({ error: 'User already has 2FA' });
@@ -68,6 +69,7 @@ module.exports = (Router, Service, App) => {
   Router.delete('/tfa', passportAuth, (req, res) => {
     const user = req.user.email;
 
+    // TODO: REVISAR
     Service.User.FindUserByEmail(user).then((userData) => {
       if (!userData.secret_2FA) {
         res

@@ -12,7 +12,8 @@ module.exports = (sequelize, DataTypes) => {
     bridge_password: DataTypes.STRING,
     mnemonic: DataTypes.STRING
   }, {
-    timestamps: false
+    timestamps: false,
+    underscored: true
   });
 
   return TeamInvitations;
